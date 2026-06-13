@@ -95,64 +95,50 @@ Object.keys(GROUP_SEEDS).forEach(g => {
 /* ═══════════════════════════════════════════════════════
    AI STANDINGS POLL
 ═══════════════════════════════════════════════════════ */
+async function callAPI(prompt) {
+  const SYSTEM = "You are a JSON-only API. Your entire response must be a single valid JSON object. " +
+    "Start with { and end with }. No text before, no text after, no markdown, no code fences, no explanation.";
+  const res = await fetch("https://fifa-proxy.nancyamedeo.workers.dev", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 3000,
+      system: SYSTEM,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
+  if (!res.ok) { const err = await res.text(); throw new Error("API " + res.status + ": " + err.slice(0,200)); }
+  const data = await res.json();
+  const text = data.content.filter(b => b.type === "text").map(b => b.text).join("");
+  console.log("Raw API response:", text.slice(0, 400));
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("No JSON object in response: " + text.slice(0, 200));
+  return JSON.parse(m[0]);
+}
+
 async function fetchStandings() {
   setStatus("Fetching latest standings…", "loading");
   try {
     const today = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-    const prompt = `Today is ${today}. Search for the current 2026 FIFA World Cup group stage standings.
+    const prompt = "Today is " + today + ". Search for the current 2026 FIFA World Cup group stage standings. " +
+      "Return a JSON object with keys A through L. Each key maps to an array of 4 teams sorted by standings (pts desc, gd desc, gf desc). " +
+      "Each team: {\"name\":\"Mexico\",\"gp\":1,\"w\":1,\"d\":0,\"l\":0,\"gf\":2,\"ga\":0,\"gd\":2,\"pts\":3} " +
+      "Use zeros for groups where no matches have been played yet.";
 
-Return ONLY a JSON object — no markdown, no explanation — with this exact shape:
-{
-  "A": [ {"name":"Mexico","gp":1,"w":1,"d":0,"l":0,"gf":2,"ga":0,"gd":2,"pts":3}, ... ],
-  "B": [...],
-  "C": [...],
-  "D": [...],
-  "E": [...],
-  "F": [...],
-  "G": [...],
-  "H": [...],
-  "I": [...],
-  "J": [...],
-  "K": [...],
-  "L": [...]
-}
+    const parsed = await callAPI(prompt);
 
-Each group must have exactly 4 teams, sorted by current standings (pts desc, gd desc, gf desc).
-Use zeros for groups/teams where no matches have been played yet.`;
-
-    const res = await fetch("https://fifa-proxy.nancyamedeo.workers.dev", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        temperature: 0,
-        max_tokens: 2000,
-        system: "You are a JSON-only data API. Output ONLY the raw JSON structure requested. Do not write any text before or after the JSON. Do not explain your reasoning. Do not use markdown. Do not use code fences. The very first character of your response must be [ or { and the very last character must be ] or }.",
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
-
-    if (!res.ok) { const err = await res.text(); throw new Error("API " + res.status + ": " + err.slice(0,200)); }
-    const data = await res.json();
-    const text = data.content.filter(b => b.type === "text").map(b => b.text).join("");
-    // Log raw response for debugging
-    console.log("Raw API response:", text.slice(0, 300));
-    const objMatch = text.match(/\{[\s\S]*\}/);
-    if (!objMatch) throw new Error("No JSON object in: " + text.slice(0, 200));
-    const parsed = JSON.parse(objMatch[0]);
-
-    // merge flags from seed
     Object.keys(parsed).forEach(g => {
       if (!GROUP_SEEDS[g]) return;
       standings[g] = parsed[g].map(t => {
-        const seed = GROUP_SEEDS[g].find(s => s.n.toLowerCase().includes(t.name.toLowerCase().split(" ")[0].toLowerCase())) || {f:"🏳"};
+        const seed = GROUP_SEEDS[g].find(s => s.n.toLowerCase().includes(t.name.toLowerCase().split(" ")[0].toLowerCase())) || {f:"\ud83c\udff3"};
         return { f: seed.f, n: t.name, gp:t.gp, w:t.w, d:t.d, l:t.l, gf:t.gf, ga:t.ga, gd:t.gd, pts:t.pts };
       });
     });
 
     const now = new Date();
-    setStatus(`Updated ${now.toLocaleTimeString()} · Next in 1 hr`, "");
+    setStatus("Updated " + now.toLocaleTimeString() + " · Next in 1 hr", "");
   } catch(e) {
     console.error("Standings fetch error:", e);
     setStatus("Update failed — showing last data", "error");
@@ -160,6 +146,8 @@ Use zeros for groups/teams where no matches have been played yet.`;
   renderStandings();
 }
 
+Each group must have exactly 4 teams, sorted by current standings (pts desc, gd desc, gf desc).
+Use zeros for groups/teams where no matches have been played yet.`;
 /* ── RENDER ── */
 function rowClass(pos, gamesPlayed) {
   if (gamesPlayed === 0) return "";
