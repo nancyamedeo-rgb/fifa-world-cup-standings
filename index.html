@@ -146,8 +146,6 @@ async function fetchStandings() {
   renderStandings();
 }
 
-Each group must have exactly 4 teams, sorted by current standings (pts desc, gd desc, gf desc).
-Use zeros for groups/teams where no matches have been played yet.`;
 /* ── RENDER ── */
 function rowClass(pos, gamesPlayed) {
   if (gamesPlayed === 0) return "";
